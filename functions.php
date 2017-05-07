@@ -11,6 +11,8 @@ function themeConfig($form) {
     $iosicon = new Typecho_Widget_Helper_Form_Element_Text('iosicon', NULL, NULL, _t('apple touch icon地址'), _t('一般为http://www.yourblog.com/image.png,支持 https:// 或 //,留空则不设置Apple Touch Icon'));
     $form->addInput($iosicon->addRule('xssCheck', _t('请不要在图片链接中使用特殊字符')));
 
+    $searchPage = new Typecho_Widget_Helper_Form_Element_Text('searchPage', NULL, NULL, _t('搜索页地址'), _t('输入你的 Template Page of Search 的页面地址,记得带上 http:// 或 https://'));
+    $form->addInput($searchPage->addRule('xssCheck', _t('请不要在链接中使用特殊字符')));
 
     $pjaxSet = new Typecho_Widget_Helper_Form_Element_Radio('pjaxSet',
         array('able' => _t('启用'),
@@ -26,6 +28,13 @@ function themeConfig($form) {
         'disable', _t('DNS预解析加速'), _t('默认禁止，启用则会对CDN资源和Gravatar进行加速'));
     $form->addInput($DnsPrefetch);
 
+    $htmlCompress = new Typecho_Widget_Helper_Form_Element_Radio('htmlCompress',
+        array('able' => _t('启用'),
+            'disable' => _t('禁止'),
+        ),
+        'disable', _t('代码压缩设置'), _t('默认禁止，启用则会对HTML代码进行压缩，可能会跟部分插件存在兼容问题，请自行测试'));
+    $form->addInput($htmlCompress);
+
     $fastClickSet = new Typecho_Widget_Helper_Form_Element_Radio('fastClickSet',
         array('able' => _t('启用'),
             'disable' => _t('禁止'),
@@ -33,12 +42,26 @@ function themeConfig($form) {
         'disable', _t('移动端点击延迟消除设置'), _t('默认禁止，好多安卓原生浏览器有点击延迟，想开启就开启吧'));
     $form->addInput($fastClickSet);
 
+    $postListSwitch = new Typecho_Widget_Helper_Form_Element_Radio('postListSwitch',
+        array('threeList' => _t('三栏'),
+            'oneList' => _t('单栏'),
+        ),
+        'oneList', _t('首页文章列表设置'), _t('默认单栏，根据自己的喜好去做切换吧'));
+    $form->addInput($postListSwitch);
+
     $colorBgPosts = new Typecho_Widget_Helper_Form_Element_Radio('colorBgPosts',
         array('customColor' => _t('启用'),
             'defaultColor' => _t('禁用'),
         ),
         'defaultColor', _t('文章色块设置'), _t('默认禁止，启用则可以通过文章字段控制色块颜色，仅支持blue、purple、green、yellow、red'));
     $form->addInput($colorBgPosts);
+
+    $postshowthumb = new Typecho_Widget_Helper_Form_Element_Radio('postshowthumb',
+        array('able' => _t('启用'),
+            'disable' => _t('禁用'),
+        ),
+        'disable', _t('文章题图设置'), _t('默认禁止，启用则在文章页内显示缩略图'));
+    $form->addInput($postshowthumb);
 
     $relatedPosts = new Typecho_Widget_Helper_Form_Element_Radio('relatedPosts',
         array('able' => _t('启用'),
@@ -58,7 +81,7 @@ function themeConfig($form) {
         array('able' => _t('启用'),
             'disable' => _t('禁止'),
         ),
-        'disable', _t('代码高亮设置'), _t('默认禁止，启用则会对 ``` 进行代码高亮，支持20种编程语言的高亮'));
+        'disable', _t('代码高亮设置'), _t('默认禁止，启用则会对 ``` 进行代码高亮，支持22种编程语言的高亮'));
     $form->addInput($useHighline);
 
     $useMathjax = new Typecho_Widget_Helper_Form_Element_Radio('useMathjax',
@@ -90,6 +113,13 @@ function themeConfig($form) {
     $form->addInput($default_thumb->addRule('xssCheck', _t('请不要在链接中使用特殊字符')));
 }
 
+function themeInit($archive){
+    Helper::options()->commentsMaxNestingLevels = 999;
+    if ($archive->is('archive')) {
+        $archive->parameter->pageSize = 12;
+    }
+}
+
 function showThumb($obj,$size=null,$link=false){
     preg_match_all( "/<[img|IMG].*?src=[\'|\"](.*?)[\'|\"].*?[\/]?>/", $obj->content, $matches );
     $thumb = '';
@@ -116,11 +146,22 @@ function showThumb($obj,$size=null,$link=false){
     }
 }
 
+function parseFieldsThumb($obj){
+    $options = Typecho_Widget::widget('Widget_Options');
+    if(!empty($options->src_add) && !empty($options->cdn_add)){
+        $fieldsThumb = str_ireplace($options->src_add,$options->cdn_add,$obj->fields->thumb);
+        echo trim($fieldsThumb);
+    }else{
+        return $obj->fields->thumb();
+    }
+}
+
 function parseContent($obj){
     $options = Typecho_Widget::widget('Widget_Options');
     if(!empty($options->src_add) && !empty($options->cdn_add)){
         $obj->content = str_ireplace($options->src_add,$options->cdn_add,$obj->content);
     }
+    $obj->content = preg_replace("/<a href=\"([^\"]*)\">/i", "<a href=\"\\1\" target=\"_blank\">", $obj->content);
     echo trim($obj->content);
 }
 
@@ -157,3 +198,103 @@ function getRecentPosts($obj,$pageSize){
     }
 }
 
+function randBgIco(){
+    $bgIco=array('book','game','note','chat','code','image','web','link','design','lock');
+    return $bgIco[mt_rand(0,9)];
+}
+
+function randBgColor(){
+    $bgColor=array('blue','purple','green','yellow','red','orange');
+    return $bgColor[mt_rand(0,5)];
+}
+
+function theNext($widget, $default = NULL){
+    $db = Typecho_Db::get();
+    $sql = $db->select()->from('table.contents')
+        ->where('table.contents.created > ?', $widget->created)
+        ->where('table.contents.status = ?', 'publish')
+        ->where('table.contents.type = ?', $widget->type)
+        ->where('table.contents.password IS NULL')
+        ->order('table.contents.created', Typecho_Db::SORT_ASC)
+        ->limit(1);
+    $content = $db->fetchRow($sql);
+    if ($content) {
+        $content = $widget->filter($content);
+        $link = '<a href="' . $content['permalink'] . '" title="' . $content['title'] . '">←</a>';
+        echo $link;
+    } else {
+        echo $default;
+    }
+}
+
+function thePrev($widget, $default = NULL){
+    $db = Typecho_Db::get();
+    $sql = $db->select()->from('table.contents')
+        ->where('table.contents.created < ?', $widget->created)
+        ->where('table.contents.status = ?', 'publish')
+        ->where('table.contents.type = ?', $widget->type)
+        ->where('table.contents.password IS NULL')
+        ->order('table.contents.created', Typecho_Db::SORT_DESC)
+        ->limit(1);
+    $content = $db->fetchRow($sql);
+    if ($content) {
+        $content = $widget->filter($content);
+        $link = '<a href="' . $content['permalink'] . '" title="' . $content['title'] . '">→</a>';
+        echo $link;
+    } else {
+        echo $default;
+    }
+}
+
+function compressHtml($html_source) {
+    $chunks = preg_split('/(<!--<nocompress>-->.*?<!--<\/nocompress>-->|<nocompress>.*?<\/nocompress>|<pre.*?\/pre>|<textarea.*?\/textarea>|<script.*?\/script>)/msi', $html_source, -1, PREG_SPLIT_DELIM_CAPTURE);
+    $compress = '';
+    foreach ($chunks as $c) {
+        if (strtolower(substr($c, 0, 19)) == '<!--<nocompress>-->') {
+            $c = substr($c, 19, strlen($c) - 19 - 20);
+            $compress .= $c;
+            continue;
+        } else if (strtolower(substr($c, 0, 12)) == '<nocompress>') {
+            $c = substr($c, 12, strlen($c) - 12 - 13);
+            $compress .= $c;
+            continue;
+        } else if (strtolower(substr($c, 0, 4)) == '<pre' || strtolower(substr($c, 0, 9)) == '<textarea') {
+            $compress .= $c;
+            continue;
+        } else if (strtolower(substr($c, 0, 7)) == '<script' && strpos($c, '//') != false && (strpos($c, "\r") !== false || strpos($c, "\n") !== false)) {
+            $tmps = preg_split('/(\r|\n)/ms', $c, -1, PREG_SPLIT_NO_EMPTY);
+            $c = '';
+            foreach ($tmps as $tmp) {
+                if (strpos($tmp, '//') !== false) {
+                    if (substr(trim($tmp), 0, 2) == '//') {
+                        continue;
+                    }
+                    $chars = preg_split('//', $tmp, -1, PREG_SPLIT_NO_EMPTY);
+                    $is_quot = $is_apos = false;
+                    foreach ($chars as $key => $char) {
+                        if ($char == '"' && $chars[$key - 1] != '\\' && !$is_apos) {
+                            $is_quot = !$is_quot;
+                        } else if ($char == '\'' && $chars[$key - 1] != '\\' && !$is_quot) {
+                            $is_apos = !$is_apos;
+                        } else if ($char == '/' && $chars[$key + 1] == '/' && !$is_quot && !$is_apos) {
+                            $tmp = substr($tmp, 0, $key);
+                            break;
+                        }
+                    }
+                }
+                $c .= $tmp;
+            }
+        }
+        $c = preg_replace('/[\\n\\r\\t]+/', ' ', $c);
+        $c = preg_replace('/\\s{2,}/', ' ', $c);
+        $c = preg_replace('/>\\s</', '> <', $c);
+        $c = preg_replace('/\\/\\*.*?\\*\\//i', '', $c);
+        $c = preg_replace('/<!--[^!]*-->/', '', $c);
+        $compress .= $c;
+    }
+    return $compress;
+}
+
+function seoSetting($obj){
+
+}
